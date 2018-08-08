@@ -8,15 +8,16 @@
 
 (setq cw/windows '())
 
-(cl-defstruct cw/window buffer region-begin region-end)
+(cl-defstruct cw/window buffer region-begin region-end name)
 
-(defun cw/get-text-from-window (window)
+(defun cw/render-window-in-window-buffer (window)
   (with-current-buffer cw/buffer
-	(insert-buffer-substring (cw/window-buffer window) (cw/window-region-begin window) (cw/window-region-end window))))
-
-(defun cw/clear-windows ()
-  (interactive)
-  (setq cw/windows '()))
+	(ov-set (ov-insert (format "=======%s=======" (cw/window-name window))) 'face '(:foreground "#66cdaa"))
+	(insert "\n")
+	(insert-buffer-substring (cw/window-buffer window) (cw/window-region-begin window) (cw/window-region-end window))
+	(insert "\n")
+	(ov-set (ov-insert "================") 'face '(:foreground "#7fffd4"))
+	(insert "\n\n")))
 
 (defun cw/mark-window-in-owners-buffer (window)
   (with-current-buffer (cw/window-buffer window)
@@ -33,9 +34,9 @@
 	(erase-buffer)
 	(-each cw/windows (lambda (item) (with-current-buffer (cw/window-buffer item) (ov-clear))))
 	(-each cw/windows
-	  (lambda (item)
-		(cw/mark-window-in-owners-buffer item)
-		(cw/get-text-from-window item)))))
+	  (lambda (window)
+		(cw/mark-window-in-owners-buffer window)
+		(cw/render-window-in-window-buffer window)))))
 
 (defun cw/sanitize-window (window)
   (let* ((window-buffer (cw/window-buffer window))
@@ -87,9 +88,14 @@
 	(setq cw/buffer (get-buffer-create cw/code-window-buffer-name))
 	(add-hook 'after-change-functions #'cw/update-buffer-hook)))
 
+(defun cw/clear-windows ()
+  (interactive)
+  (setq cw/windows '())
+  (cw/update-buffer))
+
 (defun cw/create-window ()
   (interactive)
   (cw/create-code-window-buffer)
   (when (region-active-p)
-	(add-to-list 'cw/windows (make-cw/window :buffer (current-buffer) :region-begin (region-beginning) :region-end (region-end)))
+	(add-to-list 'cw/windows (make-cw/window :buffer (current-buffer) :region-begin (region-beginning) :region-end (region-end) :name (buffer-name)))
 	(cw/update-buffer)))
