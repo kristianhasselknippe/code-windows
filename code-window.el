@@ -29,6 +29,9 @@
 	  ;;	(message (format "Buffer length: %d" buffer-len)))
 	  (ov window-begin window-end 'face '(:background "#333333")))))
 
+(defun cw/clear-overlays-in-owner-buffers ()
+  (-each cw/windows (lambda (item) (with-current-buffer (cw/window-buffer item) (ov-clear)))))
+
 (defun cw/update-buffer ()
   (with-current-buffer cw/buffer
 	(erase-buffer)
@@ -128,3 +131,26 @@
 			  (add-to-list 'cw/windows (make-cw/window :buffer (current-buffer) :region-begin from :region-end to :name (buffer-name)))
 			  (cw/update-buffer))
 		  (message "A window already exists here. Delete it first if you want to create a new one"))))))
+
+
+(defun cw/pos-inside-window (pos window)
+  (let ((from (cw/window-region-begin window))
+		(to (cw/window-region-end window)))
+	(and (>= pos from)
+		 (<= pos to))))
+
+(defun cw/get-window-at-point ()
+  (let ((buf (current-buffer))
+		(pos (point)))
+    (-find (lambda (window)
+			 (cw/pos-inside-window pos window)) cw/windows)))
+
+(defun cw/delete-window ()
+  ;;TODO: Make this work on the code-window-buffer as well
+  (interactive)
+  (let ((matching-window (cw/get-window-at-point)))
+	(message (format "Matching window %s" matching-window))
+	(when matching-window
+	  (cw/clear-overlays-in-owner-buffers)
+	  (setf cw/windows (delete matching-window cw/windows))
+	  (cw/update-buffer))))
