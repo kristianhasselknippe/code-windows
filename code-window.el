@@ -6,18 +6,22 @@
 
 (setq cw/code-window-buffer-name "code-window-buffer")
 
+(setq cw/rendered-windows '())
 (setq cw/windows '())
 
+(cl-defstruct cw/rendered-window from to window)
 (cl-defstruct cw/window buffer region-begin region-end name)
 
 (defun cw/render-window-in-window-buffer (window)
   (with-current-buffer cw/buffer
-	(ov-set (ov-insert (format "=======%s=======" (cw/window-name window))) 'face '(:foreground "#66cdaa"))
-	(insert "\n")
-	(insert-buffer-substring (cw/window-buffer window) (cw/window-region-begin window) (cw/window-region-end window))
-	(insert "\n")
-	(ov-set (ov-insert "================") 'face '(:foreground "#7fffd4"))
-	(insert "\n\n")))
+	(let ((from-pos (point)))
+	  (ov-set (ov-insert (format "=======%s=======" (cw/window-name window))) 'face '(:foreground "#66cdaa"))
+	  (insert "\n")
+	  (insert-buffer-substring (cw/window-buffer window) (cw/window-region-begin window) (cw/window-region-end window))
+	  (insert "\n")
+	  (ov-set (ov-insert "================") 'face '(:foreground "#7fffd4"))
+	  (insert "\n\n")
+	  (add-to-list 'cw/rendered-windows (make-cw/rendered-window :from from-pos :to (point) :window window)))))
 
 (defun cw/mark-window-in-owners-buffer (window)
   (with-current-buffer (cw/window-buffer window)
@@ -36,6 +40,7 @@
   (with-current-buffer cw/buffer
 	(erase-buffer)
 	(-each cw/windows (lambda (item) (with-current-buffer (cw/window-buffer item) (ov-clear))))
+	(setq cw/rendered-windows '())
 	(-each cw/windows
 	  (lambda (window)
 		(cw/mark-window-in-owners-buffer window)
@@ -113,8 +118,6 @@
 									  (and (equal (cw/window-buffer window) (current-buffer))
 										   (cw/regions-overlaps-p from to (cw/window-region-begin window) (cw/window-region-end window))))
 									cw/windows)))
-	(message (format "From-to-equal %s" from-to-equal))
-	(message (format "Overlapping w %s" overlapping-window-exists))
 	(and (not from-to-equal)
 		 overlapping-window-exists)))
 
@@ -145,12 +148,27 @@
     (-find (lambda (window)
 			 (cw/pos-inside-window pos window)) cw/windows)))
 
+(defun cw/delete-window-at-point-in-code-window-buffer ()
+  (let ((pos (point)))
+	(let ((window-at-point (-find (lambda (window)
+									(let ((from (cw/rendered-window-from window))
+										  (to (cw/rendered-window-to window)))
+									  (let ((ret (and (>= pos from)
+													  (<= pos to))))
+										ret)))
+								  cw/rendered-windows)))
+
+	  (when window-at-point
+		(setf cw/windows (delete (cw/rendered-window-window window-at-point) cw/windows))))))
+
 (defun cw/delete-window ()
-  ;;TODO: Make this work on the code-window-buffer as well
   (interactive)
-  (let ((matching-window (cw/get-window-at-point)))
-	(message (format "Matching window %s" matching-window))
-	(when matching-window
-	  (cw/clear-overlays-in-owner-buffers)
-	  (setf cw/windows (delete matching-window cw/windows))
-	  (cw/update-buffer))))
+  (if (equal (current-buffer) cw/buffer)
+	  (progn
+		(cw/delete-window-at-point-in-code-window-buffer)
+		(cw/update-buffer))
+	(let ((matching-window (cw/get-window-at-point)))
+	  (when matching-window
+		(cw/clear-overlays-in-owner-buffers)
+		(setf cw/windows (delete matching-window cw/windows))
+		(cw/update-buffer)))))
