@@ -23,10 +23,10 @@
   (with-current-buffer (cw/window-buffer window)
 	(let ((window-begin (cw/window-region-begin window))
 		  (window-end (cw/window-region-end window)))
-	  (message (format "Setting window from %d to %d" window-begin window-end))
-	  (let* ((window-buffer (cw/window-buffer window))
-			 (buffer-len (with-current-buffer window-buffer (buffer-size))))
-		(message (format "Buffer length: %d" buffer-len)))
+	  ;;(message (format "Setting window from %d to %d" window-begin window-end))
+	  ;;(let* ((window-buffer (cw/window-buffer window))
+	  ;;		 (buffer-len (with-current-buffer window-buffer (buffer-size))))
+	  ;;	(message (format "Buffer length: %d" buffer-len)))
 	  (ov window-begin window-end 'face '(:background "#333333")))))
 
 (defun cw/update-buffer ()
@@ -51,7 +51,8 @@
 	  (setf (cw/window-region-end window) (1+ buffer-len)))))
 
 (defun cw/update-buffer-hook (beginning end length-before-edit)
-  (let ((windows-in-buffer-being-changed (-filter (lambda (window) (equal (cw/window-buffer window) (current-buffer))) cw/windows)))
+  (let ((windows-in-buffer-being-changed (-filter (lambda (window) (equal (cw/window-buffer window) (current-buffer))) cw/windows))
+		(needs-update 'nil))
 	(-each windows-in-buffer-being-changed
 	  (lambda (window-being-changed)
 		(when window-being-changed
@@ -61,7 +62,7 @@
 				 (length-diff (- length-after-edit length-before-edit)))
 			;;(message (format "Window begin (%d) - end (%d)" window-begin window-end))
 			;;(message (format "From (%d) to (%d) Len before (%d), Len after(%d), DIFF %d" beginning end length-before-edit length-after-edit length-diff))
-
+			(setf needs-update 't)
 			(cond
 
 			 ((or (and (<= beginning window-begin)
@@ -81,7 +82,8 @@
 				   (<= end (1+ window-end)))
 			  (setf (cw/window-region-end window-being-changed) (+ window-end length-diff)))))
 		  (cw/sanitize-window window-being-changed))))
-	(cw/update-buffer)))
+	(when needs-update
+	  (cw/update-buffer))))
 
 (defun cw/create-code-window-buffer ()
   (unless cw/buffer
@@ -93,9 +95,36 @@
   (setq cw/windows '())
   (cw/update-buffer))
 
+(defun cw/regions-overlaps-p (from1 to1 from2 to2)
+  (let ((minFrom (min from1 from2))
+		(maxFrom (max from1 from2))
+		(minTo (min to1 to2))
+		(maxTo (max to1 to2)))
+	(> minTo maxFrom)))
+
+
+(defun cw/overlapping-window-exists (from to buffer)
+  (let ((from-to-equal (= from to))
+		(overlapping-window-exists (-any
+									(lambda (window)
+									  (and (equal (cw/window-buffer window) (current-buffer))
+										   (cw/regions-overlaps-p from to (cw/window-region-begin window) (cw/window-region-end window))))
+									cw/windows)))
+	(message (format "From-to-equal %s" from-to-equal))
+	(message (format "Overlapping w %s" overlapping-window-exists))
+	(and (not from-to-equal)
+		 overlapping-window-exists)))
+
 (defun cw/create-window ()
   (interactive)
   (cw/create-code-window-buffer)
-  (when (region-active-p)
-	(add-to-list 'cw/windows (make-cw/window :buffer (current-buffer) :region-begin (region-beginning) :region-end (region-end) :name (buffer-name)))
-	(cw/update-buffer)))
+
+  (unless (equal (current-buffer) cw/buffer)
+	(when (region-active-p)
+	  (let ((from (region-beginning))
+			(to (region-end)))
+		(if (not (cw/overlapping-window-exists from to (current-buffer)))
+			(progn
+			  (add-to-list 'cw/windows (make-cw/window :buffer (current-buffer) :region-begin from :region-end to :name (buffer-name)))
+			  (cw/update-buffer))
+		  (message "A window already exists here. Delete it first if you want to create a new one"))))))
